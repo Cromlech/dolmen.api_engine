@@ -22,8 +22,5 @@ class authenticate(object):
                     else:
                         return reply(code, text=payload)(
                             environ, start_response)
-                except Exception as e:
-                    # log me
-                    raise
             return reply(401)(environ, start_response)
         return method_watchdog

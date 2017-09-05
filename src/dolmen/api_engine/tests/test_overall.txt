@@ -13,7 +13,7 @@ Dolmen API utilities
   >>> class IUserAction(Interface):
   ...
   ...  username = ASCIILine(
-  ...      title=u"User identifier",
+  ...      title="User identifier",
   ...      required=True,
   ...      )
 
@@ -36,8 +36,50 @@ Dolmen API utilities
   ...      value_type=ASCIILine(),
   ...      )
 
+  >>> import json
+  >>> @allowed('GET')
+  ... @validate(IUsersListing, 'GET')
+  ... def UsersListing(action_request, overhead):
+  ...
+  ...     listing = []
+  ...     for username, details in USERS.items():
+  ...         if not action_request.departments:
+  ...             listing.append({username: details})
+  ...         elif set(action_request.departments) & set(details['departments']):
+  ...             listing.append({username: details})
+  ...     if action_request.departments and not listing:
+  ...         return reply(404, text="No matching users found.")
+  ...     return reply(200, text=json.dumps(listing),
+  ...                  content_type="application/json")
+
+  >>> class IUserCreation(Interface):
+  ...
+  ...  username = ASCIILine(
+  ...      title="User identifiers",
+  ...      required=True,
+  ...      )
+  ...
+  ...  departments = List(
+  ...      title=u"Department identifiers",
+  ...      required=True,
+  ...      value_type=ASCIILine(),
+  ...      )
+
+  >>> @allowed('POST')
+  ... @validate(IUserCreation, 'POST')
+  ... def UserCreation(action_request, overhead):
+  ...
+  ...     if action_request.username in USERS:
+  ...         return reply(409, text="User already registered")
+  ...     else:
+  ...         USERS[action_request.username] = {
+  ...             'departments': action_request.departments}
+  ...     return reply(201, text="User added.")
+
   >>> UsersModule = {
   ...     '/details': UserDetails,
+  ...     '/add': UserCreation,
+  ...     '/list': UsersListing,
   ... }
 
   >>> from dolmen.api_engine.components import Endpoint
@@ -65,3 +107,24 @@ Dolmen API utilities
   >>> resp.text
   'User not found.'
 
+  >>> resp = app.post('/add', {'username': 'Alexandra', 'departments': ['Psychology', 'Cooking']}, expect_errors=True)
+  >>> resp.status
+  '201 Created'
+
+  >>> resp = app.post('/add', {'username': 'Alexandra', 'departments': ['Psychology', 'Cooking']}, expect_errors=True)
+  >>> resp.status
+  '409 Conflict'
+
+  >>> resp = app.get('/list')
+  >>> resp.json
+  [{'Alexandra': {'departments': ['Psychology', 'Cooking']}}]
+
+  >>> resp = app.get('/list?departments=Cooking')
+  >>> resp.json
+  [{'Alexandra': {'departments': ['Psychology', 'Cooking']}}]
+
+  >>> resp = app.get('/list?departments=Dancing', expect_errors=True)
+  >>> resp.status
+  '404 Not Found'
+  >>> resp.text
+  'No matching users found.'

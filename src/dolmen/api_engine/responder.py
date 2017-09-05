@@ -76,7 +76,7 @@ def reply(code, text=None, charset='utf8', content_type='text/plain'):
             response = HTTPRESPONSES.get(code)
             return response()
         else:
-            response = Response(text, status=code, content_type=content_type)
-            response.charset = charset
+            response = Response(
+                text, status=code, content_type=content_type, charset=charset)
             return response
     return GENERIC_ERROR
