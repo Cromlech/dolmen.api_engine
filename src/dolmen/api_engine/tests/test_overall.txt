@@ -115,11 +115,21 @@ Dolmen API utilities
   >>> resp.status
   '409 Conflict'
 
+  >>> resp = app.post('/list', expect_errors=True)
+  >>> resp.status
+  '405 Method Not Allowed'
+  >>> resp.text
+  '405 Method Not Allowed\n\nThe method POST is not allowed for this resource. \n\n '
+
   >>> resp = app.get('/list')
   >>> resp.json
   [{'Alexandra': {'departments': ['Psychology', 'Cooking']}}]
 
   >>> resp = app.get('/list?departments=Cooking')
+  >>> resp.json
+  [{'Alexandra': {'departments': ['Psychology', 'Cooking']}}]
+
+  >>> resp = app.get('/list?departments=Cooking&departments=Sports')
   >>> resp.json
   [{'Alexandra': {'departments': ['Psychology', 'Cooking']}}]
 
