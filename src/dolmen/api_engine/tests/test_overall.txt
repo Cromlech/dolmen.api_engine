@@ -1,0 +1,4 @@
+Dolmen API utilities
+********************
+
+  >>> from dolmen.api_engine.validation import allowed, validate

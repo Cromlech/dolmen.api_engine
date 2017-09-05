@@ -1,0 +1,13 @@
+{
+  "bootstrap.py": true,
+  "lib/python3.5/config-3.5m-x86_64-linux-gnu/python-config.py": true,
+  "lib/python3.5/encodings/cp65001.py": true,
+  "lib/python3.5/encodings/mbcs.py": true,
+  "lib/python3.5/site-packages/pip/_vendor/html5lib/_trie/datrie.py": true,
+  "lib/python3.5/site-packages/pip/_vendor/html5lib/treeadapters/genshi.py": true,
+  "lib/python3.5/site-packages/pip/_vendor/html5lib/treebuilders/etree_lxml.py": true,
+  "lib/python3.5/site-packages/pip/_vendor/ordereddict.py": true,
+  "lib/python3.5/site-packages/wheel/test/test_basic.py::test_pydist": true,
+  "setup.py": true,
+  "src/cromlech/jwt/tests/test_jwt.txt::test_jwt.txt": true
+}
