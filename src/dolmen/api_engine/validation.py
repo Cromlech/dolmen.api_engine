@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 
+from collections import namedtuple, Iterable
 from webob import Request
 from zope.schema import getFieldsInOrder, getValidationErrors
+from zope.schema.interfaces import ICollection
 
 from .responder import reply
 from .definitions import METHODS
@@ -10,31 +12,46 @@ from .definitions import METHODS
 BASE_SOURCES = frozenset(('POST', 'GET'))
 
 
+def extract_fields(fields, params):
+    for name, field in fields:
+        value = params.get(name)
+
+        if value is None:
+            yield value
+        elif ICollection.providedBy(field):
+            if not isinstance(value, Iterable):
+                value = [value]
+            yield value
+        else:
+            if isinstance(value, Iterable):
+                value = value[0]
+            yield value
+
+
 class allowed(object):
 
     def __init__(self, *methods):
-        self.methods = frozenset([method.upper() for method in methods])
+        self.methods = frozenset((method.upper() for method in methods))
         assert self.methods <= METHODS, (
             'Unsupported methods : %s' % (self.methods - METHODS))
 
     def __call__(self, app):
-        def method_watchdog(inst, environ, start_response):            
+        def method_watchdog(environ, start_response, overhead=None):            
             if not environ['REQUEST_METHOD'].upper() in self.methods:
                 return reply(405)
-            app.__allowed__ = self.methods
-            return app(inst, environ, start_response)
+            return app(environ, start_response, overhead)
         return method_watchdog
 
 
 class validate(object):
 
-    def __init__(self, iface, *sources=BASE_SOURCES):
+    def __init__(self, iface, *sources):
         self.iface = iface
         self.fields = getFieldsInOrder(iface)
         self.names = tuple((field[0] for field in self.fields))
-        assert (BASE_SOURCES | set(sources)) == BASE_SOURCES, (
+        self.sources = frozenset(sources)
+        assert self.sources <= BASE_SOURCES, (
             "Only validable sources are 'POST' and 'GET'")
-        self.sources = sources
 
     def extract_params(self, environ):
         request = Request(environ)
@@ -48,7 +65,7 @@ class validate(object):
 
     def __call__(self, action):
         RequestClass = namedtuple(action.__name__, self.names)
-        def process_action(API, environ, start_response):            
+        def process_action(environ, start_response, overhead=None):            
             params = self.extract_params(environ)
             fields = list(extract_fields(self.fields, params))
             request = RequestClass(*fields)
@@ -64,5 +81,5 @@ class validate(object):
                     else:
                         summary.append(str(error))
                 return reply(400, '\n'.join(summary))
-            return action(API, request)
+            return action(request, overhead)
         return process_action

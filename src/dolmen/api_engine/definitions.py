@@ -4,7 +4,7 @@ Taken from
 https://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html
 """
 
-METHODS = frozenset(
+METHODS = frozenset((
     "GET",
     # Retrieves whatever data is identified by the URI, so where
     # the URI refers to a data-producing process, or a script which can
@@ -45,4 +45,4 @@ METHODS = frozenset(
     # resource, or the capabilities of a server, without implying a
     # resource action or initiating a resource retrieval.
     # Responses to this method are not cacheable.
-)
+))
