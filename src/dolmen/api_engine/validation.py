@@ -9,13 +9,14 @@ from .responder import reply
 from .definitions import METHODS
 
 
-BASE_SOURCES = frozenset(('POST', 'GET'))
+SOURCES = frozenset(('POST', 'GET'))
+JSON = frozenset(('JSON',))
 
 
 def extract_fields(fields, params):
     for name, field in fields:
         value = params.get(name)
-
+        
         if value is None:
             yield value
         elif ICollection.providedBy(field):
@@ -23,9 +24,25 @@ def extract_fields(fields, params):
                 value = [value]
             yield value
         else:
-            if isinstance(value, Iterable):
+            if (isinstance(value, Iterable) and
+                not isinstance(value, (str, bytes))):
                 value = value[0]
             yield value
+
+
+class cors_aware(object):
+
+    def __init__(self, request_handler, response_handler):
+        self.request_handler = request_handler
+        self.response_handler = response_handler
+
+    def __call__(self, app):
+        def options_handler(environ, start_response, overhead=None):
+            if environ['REQUEST_METHOD'].upper() == 'OPTIONS':
+                return self.request_handler(environ)
+            response = app(environ, start_response, overhead)
+            return self.response_handler(response)
+        return options_handler
 
 
 class allowed(object):
@@ -49,29 +66,36 @@ class validate(object):
         self.iface = iface
         self.fields = getFieldsInOrder(iface)
         self.names = tuple((field[0] for field in self.fields))
-        self.sources = frozenset(sources)
-        assert self.sources <= BASE_SOURCES, (
-            "Only validable sources are 'POST' and 'GET'")
+        self.sources = frozenset(sources)        
+        assert self.sources <= SOURCES or self.sources == JSON, \
+            "Only validable sources are 'POST' and/or 'GET' or 'JSON'"
 
     def extract_params(self, environ):
         request = Request(environ)
-        if self.sources == BASE_SOURCES:
+
+        # We return the JSON dict, directly
+        if self.sources == JSON:
+            return request.json
+
+        # We use the webob extraction then merge into a simple dict.
+        if self.sources == SOURCES:
             params = request.params
         elif 'POST' in self.sources:
             params = request.POST
         elif 'GET' in self.sources:
             params = request.GET
+
         return params.dict_of_lists()
 
     def __call__(self, action):
         RequestClass = namedtuple(action.__name__, self.names)
-        def process_action(environ, start_response, overhead=None):            
-            params = self.extract_params(environ)
+        def process_action(environ, start_response, overhead=None):
+            params = self.extract_params(environ)            
             fields = list(extract_fields(self.fields, params))
             request = RequestClass(*fields)
             errors = getValidationErrors(self.iface, request)
             nb_errors = len(errors)
-
+            
             if nb_errors:
                 summary = []
                 for field, error in errors:
