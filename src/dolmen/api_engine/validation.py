@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
 
+import json
+import inspect
+from functools import wraps
 from collections import namedtuple, Iterable
+
 from webob import Request
 from zope.schema import getFieldsInOrder, getValidationErrors
 from zope.schema.interfaces import ICollection
 
 from .responder import reply
 from .definitions import METHODS
+from .components import IAction
 
 
-SOURCES = frozenset(('POST', 'GET'))
-JSON = frozenset(('JSON',))
+SimpleOverhead = namedtuple('Overhead', ['action_request'])
 
 
 def extract_fields(fields, params):
@@ -27,83 +31,97 @@ def extract_fields(fields, params):
             if (isinstance(value, Iterable) and
                 not isinstance(value, (str, bytes))):
                 value = value[0]
+            if hasattr(field, 'fromUnicode'):
+                value = field.fromUnicode(value)
             yield value
 
 
-class cors_aware(object):
-
-    def __init__(self, request_handler, response_handler):
-        self.request_handler = request_handler
-        self.response_handler = response_handler
-
-    def __call__(self, app):
-        def options_handler(environ, start_response, overhead=None):
-            if environ['REQUEST_METHOD'].upper() == 'OPTIONS':
-                return self.request_handler(environ)
-            response = app(environ, start_response, overhead)
-            return self.response_handler(response)
-        return options_handler
+def extract_get(environ):
+    request = Request(environ)
+    params = request.GET
+    return params.dict_of_lists()
 
 
-class allowed(object):
+def extract_put(environ):
+    payload = environ['wsgi.input'].read()
+    if environ["Content-Type"] == 'application/json':
+        return json.dumps(payload)
+    return payload
 
-    def __init__(self, *methods):
-        self.methods = frozenset((method.upper() for method in methods))
-        assert self.methods <= METHODS, (
-            'Unsupported methods : %s' % (self.methods - METHODS))
 
-    def __call__(self, app):
-        def method_watchdog(environ, start_response, overhead=None):            
-            if not environ['REQUEST_METHOD'].upper() in self.methods:
-                return reply(405)
-            return app(environ, start_response, overhead)
-        return method_watchdog
+def extract_post(environ):
+    request = Request(environ)
+    if request.content_type == 'application/json':
+        return request.JSON
+    params = request.POST
+    return params.dict_of_lists()
 
 
 class validate(object):
 
-    def __init__(self, iface, *sources):
+    extractors = {
+        'GET': extract_get,
+        'POST': extract_post,
+        'PUT': extract_put,
+    }
+
+    def __init__(self, iface, as_dict=False, *sources):
         self.iface = iface
         self.fields = getFieldsInOrder(iface)
-        self.names = tuple((field[0] for field in self.fields))
-        self.sources = frozenset(sources)        
-        assert self.sources <= SOURCES or self.sources == JSON, \
-            "Only validable sources are 'POST' and/or 'GET' or 'JSON'"
+        self.as_dict = as_dict
 
-    def extract_params(self, environ):
-        request = Request(environ)
+    def extract(self, environ):
+        method = environ['REQUEST_METHOD']
+        extractor = self.extractors.get(method)
+        if extractor is None:
+            raise NotImplementedError('No extractor for method %s' % method)
+        return extractor(environ)
 
-        # We return the JSON dict, directly
-        if self.sources == JSON:
-            return request.json
+    def process_action(self, environ, requestcls):
+        params = self.extract(environ)            
+        fields = list(extract_fields(self.fields, params))
+        request = requestcls(*fields)
+        errors = getValidationErrors(self.iface, request)
+        nb_errors = len(errors)
+    
+        if nb_errors:
+            summary = {}
+            for field, error in errors:
+                doc = getattr(error, 'doc', error.__str__)
+                field_errors = summary.setdefault(field, [])
+                field_errors.append(doc())
 
-        # We use the webob extraction then merge into a simple dict.
-        if self.sources == SOURCES:
-            params = request.params
-        elif 'POST' in self.sources:
-            params = request.POST
-        elif 'GET' in self.sources:
-            params = request.GET
+            return reply(
+                400, text=json.dumps(summary),
+                content_type="application/json")
 
-        return params.dict_of_lists()
+        return request
 
     def __call__(self, action):
-        RequestClass = namedtuple(action.__name__, self.names)
-        def process_action(environ, start_response, overhead=None):
-            params = self.extract_params(environ)            
-            fields = list(extract_fields(self.fields, params))
-            request = RequestClass(*fields)
-            errors = getValidationErrors(self.iface, request)
-            nb_errors = len(errors)
-            
-            if nb_errors:
-                summary = []
-                for field, error in errors:
-                    doc = getattr(error, 'doc', None)
-                    if doc is not None:
-                        summary.append('`%s`: %s' % (field, doc()))
-                    else:
-                        summary.append(str(error))
-                return reply(400, '\n'.join(summary))
-            return action(request, overhead)
-        return process_action
+        names = tuple((field[0] for field in self.fields))
+        RequestClass = namedtuple(action.__name__, names)
+
+        @wraps(action)
+        def method_validation(*args):
+            if IAction.providedBy(args[0]):
+                inst, environ, overhead = args
+            else:
+                inst = None
+                environ, overhead = args
+
+            result = self.process_action(environ, RequestClass)
+            if isinstance(result, RequestClass):
+                if self.as_dict:
+                    result = result._asdict()
+
+                if overhead is None:
+                    overhead = SimpleOverhead(action_request=result)
+                else:
+                    overhead.action_request = result
+
+                if inst is not None:
+                    return action(inst, environ, overhead)
+                return action(environ, overhead)
+
+            return result
+        return method_validation
