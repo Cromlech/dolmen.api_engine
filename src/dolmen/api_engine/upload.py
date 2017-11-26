@@ -8,7 +8,13 @@ from stat import ST_SIZE, ST_CTIME
 
 CHUNKSIZE = 4096
 INNER_ENCODING = 'utf-8'
+REWIND = object()
+CLOSE = object()
 
+
+remove_punctuation_map = dict((
+    ord(char), None) for char in '''\/\'\"*?:;"<>|'''
+)
 _windows_device_files = (
     'CON', 'AUX', 'COM1', 'COM2', 'COM3',
     'COM4', 'LPT1', 'LPT2', 'LPT3', 'PRN', 'NUL')
@@ -27,6 +33,18 @@ def chunk_reader(fobj, chunk_size=CHUNKSIZE):
         if not chunk:
             return
         yield chunk
+
+
+class FileIterable(object):
+
+    def __init__(self, filename, filepath):
+         self.filename = filename
+         self.filepath = filepath
+
+    def __iter__(self):
+        with open(self.filepath, 'rb') as fd:
+            for chunk in chunk_reader(fd):
+                yield chunk
 
 
 def digest(fobj, hash=hashlib.sha1):
@@ -55,13 +73,14 @@ def clean_filename(filename):
        filename.split('.')[0].upper() in _windows_device_files:
         filename = '_' + filename
 
-    return filename
+    return filename.translate(remove_punctuation_map)
 
 
 def persist_files(destination, *files):
     """Document me.
     """
     # digest registry
+    
     digests = set()
 
     for item in files:
@@ -69,7 +88,7 @@ def persist_files(destination, *files):
         if digested not in digests:
             digests.add(digested)
             filename = clean_filename(item.filename)
-            path = os.path.join(destination, digested)
+            path = os.path.join(destination, filename)
             with open(path, 'wb') as upload:
                 shutil.copyfileobj(item.file, upload)
             size, date = stat_file(path)

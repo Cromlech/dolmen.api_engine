@@ -4,6 +4,7 @@ import json
 import inspect
 from functools import wraps
 from collections import namedtuple, Iterable
+from jsonschema import Draft4Validator
 
 from webob import Request
 from zope.schema import getFieldsInOrder, getValidationErrors
@@ -125,3 +126,35 @@ class validate(object):
 
             return result
         return method_validation
+
+
+class JSONSchema(object):
+
+    def __init__(self, schema_string):
+        self.string = schema_string
+        self.schema = json.loads(schema_string)
+        
+    def validate(self, obj):
+        errors = {}
+        validator = Draft4Validator(self.schema)
+        for error in sorted(validator.iter_errors(obj), key=str):
+            for field in error.path:
+                fielderrors = errors.setdefault(field, [])
+                fielderrors.append(error.message)
+        return errors
+
+    def json_validator(self, method):
+        @wraps(method)
+        def validate_method(inst, environ, overhead):
+            if environ.get('CONTENT_TYPE') != 'application/json':
+                return reply(406, text="Content type must be application/json")
+            
+            request = Request(environ)
+            errors = self.validate(request.json)
+            if errors:
+                return reply(
+                    400, text=json.dumps(errors),
+                    content_type='application/json')
+            overhead.action_request = request.json
+            return method(inst, environ, overhead)
+        return validate_method
