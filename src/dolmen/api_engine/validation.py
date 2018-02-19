@@ -138,7 +138,13 @@ class JSONSchema(object):
         errors = {}
         validator = Draft4Validator(self.schema)
         for error in sorted(validator.iter_errors(obj), key=str):
-            for field in error.path:
+            if 'required' in error.schema_path:
+                causes = ['__missing__']
+            elif error.path:
+                causes = error.path
+            else:
+                causes = ['__general__']
+            for field in causes:
                 fielderrors = errors.setdefault(field, [])
                 fielderrors.append(error.message)
         return errors
