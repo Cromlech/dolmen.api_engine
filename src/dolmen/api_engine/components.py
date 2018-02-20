@@ -19,6 +19,12 @@ class Endpoint(object):
             overhead = None
         return action(environ, overhead)
 
+    def routing(self, environ):
+        routing = self.mapper.match(path_info, environ)
+        if routing:
+            return self.process_action(environ, routing)
+        return None
+    
     def __call__(self, environ, start_response):
         # according to PEP 3333 the native string representing PATH_INFO
         # (and others) can only contain unicode codepoints from 0 to 255,
@@ -27,13 +33,11 @@ class Endpoint(object):
         path_info = environ['PATH_INFO'].encode('latin-1').decode('utf-8')
 
         # Routing as usual.
-        routing = self.mapper.match(path_info)
-        if routing:
-            response = self.process_action(environ, routing)
-        else:
+        response = self.routing(environ)
+        if response is None:
             response = reply(
                 400, "Couldn't match any action. " +
-                     "Please consult the API documentation.")
+                "Please consult the API documentation.")
         return response(environ, start_response)
 
 
