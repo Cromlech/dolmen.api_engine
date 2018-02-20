@@ -116,9 +116,9 @@ class validate(object):
                     result = result._asdict()
 
                 if overhead is None:
-                    overhead = SimpleOverhead(action_request=result)
+                    overhead = result
                 else:
-                    overhead.action_request = result
+                    overhead.set_data(result)
 
                 if inst is not None:
                     return action(inst, environ, overhead)
@@ -130,10 +130,20 @@ class validate(object):
 
 class JSONSchema(object):
 
-    def __init__(self, schema_string):
+    def __init__(self, schema, schema_string):
         self.string = schema_string
         self.schema = json.loads(schema_string)
-        
+
+    @classmethod
+    def create_from_string(cls, string):
+        schema = json.loads(string)
+        return cls(schema, string)
+
+    @classmethod
+    def create_from_json(cls, schema):
+        string = json.dumps(schema)
+        return cls(schema, string)
+
     def validate(self, obj):
         errors = {}
         validator = Draft4Validator(self.schema)
@@ -161,6 +171,6 @@ class JSONSchema(object):
                 return reply(
                     400, text=json.dumps(errors),
                     content_type='application/json')
-            overhead.action_request = request.json
+            overhead.set_data(request.json)
             return method(inst, environ, overhead)
         return validate_method
