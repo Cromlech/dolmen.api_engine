@@ -1,10 +1,19 @@
 # -*- coding: utf-8 -*-
 
+from abc import ABC, abstractmethod
 from zope.interface import Interface, implementer
 from .responder import reply
 
 
-class Endpoint(object):
+class BaseOverhead(ABC):
+
+    @abstractmethod
+    def set_data(self, data):
+        """Set the data coming from the processing of the action.
+        """
+        
+
+class Endpoint:
 
     def __init__(self, mapper, overhead_factory=None):
         self.overhead_factory = overhead_factory
@@ -41,12 +50,7 @@ class Endpoint(object):
         return response(environ, start_response)
 
 
-class IAction(Interface):
-    pass
-
-
-@implementer(IAction)
-class Action(object):
+class Action:
     """Implementation of an action as a class.
     This works as an HTTP METHOD dispatcher.
     The method names of the class must be a valid uppercase HTTP METHOD name

@@ -12,10 +12,7 @@ from zope.schema.interfaces import ICollection
 
 from .responder import reply
 from .definitions import METHODS
-from .components import IAction
-
-
-SimpleOverhead = namedtuple('Overhead', ['action_request'])
+from .components import BaseOverhead
 
 
 def extract_fields(fields, params):
@@ -78,11 +75,11 @@ class validate(object):
             raise NotImplementedError('No extractor for method %s' % method)
         return extractor(environ)
 
-    def process_action(self, environ, requestcls):
+    def process_action(self, environ, datacls):
         params = self.extract(environ)            
         fields = list(extract_fields(self.fields, params))
-        request = requestcls(*fields)
-        errors = getValidationErrors(self.iface, request)
+        data = datacls(*fields)
+        errors = getValidationErrors(self.iface, data)
         nb_errors = len(errors)
     
         if nb_errors:
@@ -96,28 +93,29 @@ class validate(object):
                 400, text=json.dumps(summary),
                 content_type="application/json")
 
-        return request
+        return data
 
     def __call__(self, action):
         names = tuple((field[0] for field in self.fields))
-        RequestClass = namedtuple(action.__name__, names)
+        DataClass = namedtuple(action.__name__, names)
 
         @wraps(action)
         def method_validation(*args):
-            if IAction.providedBy(args[0]):
+            if isinstance(args[0], Action):
                 inst, environ, overhead = args
             else:
                 inst = None
                 environ, overhead = args
 
-            result = self.process_action(environ, RequestClass)
-            if isinstance(result, RequestClass):
+            result = self.process_action(environ, DataClass)
+            if isinstance(result, DataClass):
                 if self.as_dict:
                     result = result._asdict()
 
                 if overhead is None:
                     overhead = result
                 else:
+                    assert isinstance(overhead, BaseOverhead)
                     overhead.set_data(result)
 
                 if inst is not None:
@@ -162,6 +160,8 @@ class JSONSchema(object):
     def json_validator(self, method):
         @wraps(method)
         def validate_method(inst, environ, overhead):
+            assert isinstance(overhead, BaseOverhead)
+            
             if environ.get('CONTENT_TYPE') != 'application/json':
                 return reply(406, text="Content type must be application/json")
             
