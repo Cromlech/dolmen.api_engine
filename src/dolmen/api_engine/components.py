@@ -11,46 +11,9 @@ class BaseOverhead(ABC):
     def set_data(self, data):
         """Set the data coming from the processing of the action.
         """
-        
-
-class Endpoint:
-
-    def __init__(self, mapper, overhead_factory=None):
-        self.overhead_factory = overhead_factory
-        self.mapper = mapper
-
-    def process_action(self, environ, routing):
-        action = routing.pop('controller')
-        if self.overhead_factory is not None:
-            overhead = self.overhead_factory(environ)
-            overhead.routing = routing
-        else:
-            overhead = None
-        return action(environ, overhead)
-
-    def routing(self, environ):
-        routing = self.mapper.match(path_info, environ)
-        if routing:
-            return self.process_action(environ, routing)
-        return None
-    
-    def __call__(self, environ, start_response):
-        # according to PEP 3333 the native string representing PATH_INFO
-        # (and others) can only contain unicode codepoints from 0 to 255,
-        # which is why we need to decode to latin-1 instead of utf-8 here.
-        # We transform it back to UTF-8
-        path_info = environ['PATH_INFO'].encode('latin-1').decode('utf-8')
-
-        # Routing as usual.
-        response = self.routing(environ)
-        if response is None:
-            response = reply(
-                400, "Couldn't match any action. " +
-                "Please consult the API documentation.")
-        return response(environ, start_response)
 
 
-class Action:
+class APIView(ABC):
     """Implementation of an action as a class.
     This works as an HTTP METHOD dispatcher.
     The method names of the class must be a valid uppercase HTTP METHOD name
@@ -66,4 +29,37 @@ class Action:
         else:
             response = worker(environ, overhead)
         return response
-        
+
+
+class APINode(ABC):
+
+    @abstractmethod
+    def process_endpoint(self, environ, routing_args):
+        """Process the looked up endpoint and returns a WSGI callable.
+        """
+
+    @abstractmethod
+    def lookup(self, path_info, environ):
+        """Lookups up the endpoint and returns the routing args, usually
+        containing the possible conditional parameters and the controller.
+        If nothing was found, returns None or a WSGI callable corresponding
+        to the HTTP Error (404, 405, 406).
+        """
+
+    def routing(self, environ):
+        # according to PEP 3333 the native string representing PATH_INFO
+        # (and others) can only contain unicode codepoints from 0 to 255,
+        # which is why we need to decode to latin-1 instead of utf-8 here.
+        # We transform it back to UTF-8
+        path_info = environ['PATH_INFO'].encode('latin-1').decode('utf-8')
+        routing_args = self.lookup(path_info, environ)
+        if routing_args:
+            return self.process_endpoint(environ, routing_args)
+        return None
+
+    def __call__(self, environ, start_response):
+        response = self.routing(environ)
+        if response is None:
+            response = reply(
+                404, "Not found. Please consult the API documentation.")
+        return response(environ, start_response)
