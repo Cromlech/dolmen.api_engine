@@ -161,11 +161,11 @@ class JSONSchema(object):
         @wraps(method)
         def validate_method(inst, environ, overhead):
             assert isinstance(overhead, BaseOverhead)
-            
-            if environ.get('CONTENT_TYPE') != 'application/json':
-                return reply(406, text="Content type must be application/json")
-            
             request = Request(environ)
+            
+            if request.content_type != 'application/json':
+                return reply(406, text="Content type must be application/json")
+
             errors = self.validate(request.json)
             if errors:
                 return reply(
