@@ -12,7 +12,7 @@ from zope.schema.interfaces import ICollection
 
 from .responder import reply
 from .definitions import METHODS
-from .components import BaseOverhead
+from .components import BaseOverhead, View
 
 
 def extract_fields(fields, params):
@@ -50,7 +50,7 @@ def extract_put(environ):
 def extract_post(environ):
     request = Request(environ)
     if request.content_type == 'application/json':
-        return request.JSON
+        return request.json
     params = request.POST
     return params.dict_of_lists()
 
@@ -101,7 +101,7 @@ class validate(object):
 
         @wraps(action)
         def method_validation(*args):
-            if isinstance(args[0], Action):
+            if isinstance(args[0], View):
                 inst, environ, overhead = args
             else:
                 inst = None
