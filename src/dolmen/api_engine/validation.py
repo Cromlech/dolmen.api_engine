@@ -41,10 +41,11 @@ def extract_get(environ):
 
 
 def extract_put(environ):
-    payload = environ['wsgi.input'].read()
-    if environ["Content-Type"] == 'application/json':
-        return json.dumps(payload)
-    return payload
+    request = Request(environ)
+    if request.content_type == 'application/json':
+        return request.json
+    params = request.PUT
+    return params.dict_of_lists()
 
 
 def extract_post(environ):
